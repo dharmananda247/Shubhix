@@ -3,6 +3,9 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// The GitHub build passes the key through environment variables. Nothing secret lives in the code.
+val keystorePath: String? = System.getenv("KEYSTORE_PATH")
+
 android {
     namespace = "com.shubhix.app"
     compileSdk = 34
@@ -13,7 +16,22 @@ android {
         versionCode = 3
         versionName = "1.2"
     }
-    buildTypes { release { isMinifyEnabled = false } }
+    signingConfigs {
+        create("release") {
+            if (keystorePath != null) {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            if (keystorePath != null) signingConfig = signingConfigs.getByName("release")
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
