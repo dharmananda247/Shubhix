@@ -1,8 +1,10 @@
 package com.shubhix.app
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.map
@@ -18,11 +20,13 @@ const val DEF_SHUBHU = "You are SHUBHU, the user's female AI companion inside th
 
 data class AppSettings(
     val apiKey: String = "",
-    val model: String = "gemini-2.5-flash",
+    val model: String = "gemini-3.8-flash",
     val persona: String = "SHUBHU",
     val djPrompt: String = DEF_DJ,
     val shubhuPrompt: String = DEF_SHUBHU,
-    val speed: Float = 1f
+    val speed: Float = 1f,
+    val retentionDays: Int = 30,     // 0 = keep chats forever
+    val onboarded: Boolean = false
 ) {
     fun prompt() = if (persona == "DJ") djPrompt else shubhuPrompt
 }
@@ -34,6 +38,8 @@ class Prefs(private val ctx: Context) {
     private val kDj = stringPreferencesKey("dj")
     private val kShubhu = stringPreferencesKey("shubhu")
     private val kSpeed = floatPreferencesKey("speed")
+    private val kRetention = intPreferencesKey("retention")
+    private val kOnboarded = booleanPreferencesKey("onboarded")
 
     val flow = ctx.store.data.map { p ->
         val d = AppSettings()
@@ -43,7 +49,9 @@ class Prefs(private val ctx: Context) {
             persona = p[kPersona] ?: d.persona,
             djPrompt = p[kDj] ?: d.djPrompt,
             shubhuPrompt = p[kShubhu] ?: d.shubhuPrompt,
-            speed = p[kSpeed] ?: d.speed
+            speed = p[kSpeed] ?: d.speed,
+            retentionDays = p[kRetention] ?: d.retentionDays,
+            onboarded = p[kOnboarded] ?: d.onboarded
         )
     }
 
@@ -51,6 +59,7 @@ class Prefs(private val ctx: Context) {
         ctx.store.edit {
             it[kApi] = s.apiKey; it[kModel] = s.model; it[kPersona] = s.persona
             it[kDj] = s.djPrompt; it[kShubhu] = s.shubhuPrompt; it[kSpeed] = s.speed
+            it[kRetention] = s.retentionDays; it[kOnboarded] = s.onboarded
         }
     }
 }

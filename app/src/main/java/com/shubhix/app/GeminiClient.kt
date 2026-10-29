@@ -1,13 +1,22 @@
 package com.shubhix.app
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
+import java.net.ConnectException
 import java.net.HttpURLConnection
+import java.net.UnknownHostException
 import java.net.URL
 
-data class ChatMsg(val role: String, val text: String) // role: "user" or "model"
+data class ChatMsg(
+    val role: String,            // "user" or "model"
+    val text: String,
+    val time: Long = System.currentTimeMillis(),
+    val persona: String = ""
+)
 data class AiResult(val reply: String, val actions: List<JSONObject>)
 
 object GeminiClient {
@@ -23,9 +32,27 @@ When opening an app and then tapping inside it, add wait_ms of about 2500 on the
 For code, put it inside triple backticks inside "reply" with the language name after the opening backticks.
 Never claim you did something the actions cannot do."""
 
-    suspend fun ask(apiKey: String, model: String, persona: String, history: List<ChatMsg>): AiResult =
+    /** Tries twice. If there is no network at all it fails immediately instead of waiting. */
+    suspend fun ask(apiKey: String, model: String, persona: String, history: List<ChatMsg>): AiResult {
+        require(apiKey.isNotBlank()) { "Add your Gemini API key in Settings." }
+        var last: IOException? = null
+        for (attempt in 0..1) {
+            try {
+                return request(apiKey, model, persona, history)
+            } catch (e: UnknownHostException) {
+                throw e
+            } catch (e: ConnectException) {
+                throw e
+            } catch (e: IOException) {
+                last = e
+                delay(600)
+            }
+        }
+        throw last ?: IOException("Network error")
+    }
+
+    private suspend fun request(apiKey: String, model: String, persona: String, history: List<ChatMsg>): AiResult =
         withContext(Dispatchers.IO) {
-            require(apiKey.isNotBlank()) { "Settings me Gemini API key daalo." }
             val contents = JSONArray()
             history.takeLast(14).dropWhile { it.role != "user" }.forEach {
                 contents.put(
@@ -42,8 +69,8 @@ Never claim you did something the actions cannot do."""
             val url = URL("https://generativelanguage.googleapis.com/v1beta/models/${model.trim()}:generateContent")
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
-                connectTimeout = 20000
-                readTimeout = 60000
+                connectTimeout = 6000
+                readTimeout = 15000
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json")
                 setRequestProperty("x-goog-api-key", apiKey.trim())
@@ -52,6 +79,7 @@ Never claim you did something the actions cannot do."""
             val code = conn.responseCode
             val text = (if (code in 200..299) conn.inputStream else conn.errorStream)
                 .bufferedReader().use { it.readText() }
+            if (code == 429 || code == 500 || code == 503) throw IOException("Google is busy (HTTP $code)")
             if (code !in 200..299) {
                 val msg = runCatching { JSONObject(text).getJSONObject("error").getString("message") }
                     .getOrDefault("HTTP $code")

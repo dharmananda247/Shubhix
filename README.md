@@ -1,13 +1,17 @@
-# Shubhix - Jarvis style AI assistant (DJ / SHUBHU)
+# Shubhix v1.2
 
-## Setup
-1. App kholo > Settings > Gemini API key daalo (aistudio.google.com se free key) > Save.
-2. Settings > "Screen control ON karo" > Installed apps > Shubhix > ON (tap/scroll/type ke liye).
-3. Chat screen par DJ ya SHUBHU chip se persona badlo. Mic dabao ya type karo.
+## What is in this version
+- Redesigned UI: neon purple theme, logo icon + splash, DJ / SHUBHU avatars with their own accent colours
+- "Choose your companion" screen on first launch
+- Home: glowing avatar, quick-start chips, avatar next to replies, code blocks with a Copy bar, listening waveform
+- Settings in cards: AI Brain (show/hide key, Test connection), Personas, Permissions status, Chat history
+- Saved chat history with auto-delete (Never / 7 days / 30 days), stored only on the phone
+- Offline commands (open app, torch, volume, scroll, back/home/recents, media, timer, call)
+- Online/Offline indicator, fast fail with no internet, 20 second maximum wait, one automatic retry
 
-## Build (Termux ya PC, Gradle 8.7 + JDK 17 + Android SDK 34 chahiye)
-    gradle assembleDebug
-APK: app/build/outputs/apk/debug/app-debug.apk
+## Not built yet
+Floating bubble, wake word ("Hey DJ" / "Hey Shubhu"), YouTube autoplay, signed release APK + public link.
 
-## Build (GitHub, aasan)
-Project GitHub par push karo; Actions tab me "Build APK" chalega aur APK artifact milega.
+## Build
+Push to GitHub, then Actions > Build APK > download the artifact.
+Uninstall the old Shubhix first if Android says "App not installed".

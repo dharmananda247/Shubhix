@@ -83,15 +83,24 @@ object Actions {
 
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
 
-    private fun openApp(ctx: Context, name: String): String? {
+    private fun findApp(ctx: Context, name: String): String? {
         val pm = ctx.packageManager
         val main = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val q = name.lowercase().trim()
+        if (q.isEmpty()) return null
         val apps = pm.queryIntentActivities(main, 0).map { it.activityInfo.packageName to it.loadLabel(pm).toString().lowercase() }
-        val hit = apps.firstOrNull { it.second == q }
-            ?: apps.firstOrNull { it.second.contains(q) || q.contains(it.second) }
-            ?: return "'$name' app nahi mila"
-        val i = pm.getLaunchIntentForPackage(hit.first) ?: return "'$name' open nahi hua"
+        return (apps.firstOrNull { it.second == q }
+            ?: apps.firstOrNull { it.second.contains(q) || (it.second.length >= 4 && q.contains(it.second)) })?.first
+    }
+
+    fun hasApp(ctx: Context, name: String) = findApp(ctx, name) != null
+
+    fun canCall(ctx: Context, target: String) =
+        !target.any { it.isLetter() } || lookup(ctx, target) != null
+
+    private fun openApp(ctx: Context, name: String): String? {
+        val pkg = findApp(ctx, name) ?: return "'$name' app nahi mila"
+        val i = ctx.packageManager.getLaunchIntentForPackage(pkg) ?: return "'$name' open nahi hua"
         go(ctx, i); return null
     }
 
