@@ -1,17 +1,11 @@
-# Shubhix v1.2
+# Shubhix v1.3
 
-## What is in this version
-- Redesigned UI: neon purple theme, logo icon + splash, DJ / SHUBHU avatars with their own accent colours
-- "Choose your companion" screen on first launch
-- Home: glowing avatar, quick-start chips, avatar next to replies, code blocks with a Copy bar, listening waveform
-- Settings in cards: AI Brain (show/hide key, Test connection), Personas, Permissions status, Chat history
-- Saved chat history with auto-delete (Never / 7 days / 30 days), stored only on the phone
-- Offline commands (open app, torch, volume, scroll, back/home/recents, media, timer, call)
-- Online/Offline indicator, fast fail with no internet, 20 second maximum wait, one automatic retry
-
-## Not built yet
-Floating bubble, wake word ("Hey DJ" / "Hey Shubhu"), YouTube autoplay, signed release APK + public link.
-
-## Build
-Push to GitHub, then Actions > Build APK > download the artifact.
-Uninstall the old Shubhix first if Android says "App not installed".
+## Fixes and features in 1.3
+- Gemini key: "Save & test" shows a green success or the real reason it failed; "Choose model" lists the models your key can use
+- Custom commands (Commands tab > My commands): open app, website, call, YouTube search, or "Ask AI"; the AI also knows your shortcuts
+- Smarter AI: it receives your installed app names (switchable), the current time, and worked examples
+- Voice: reply on/off switch (also a speaker icon in the chat header), separate voice and pitch for DJ and SHUBHU, listening language choice
+- Accessibility: clearer status (running / turned on but not running / off), a Test button, exported service flag fixed
+- More offline commands: time, date, battery, Wi-Fi/Bluetooth/settings, screenshot, lock screen, notifications
+- Torch now uses the back camera flash
+- Startup: permissions are asked only when missing; network status handled safely; a crash log appears in Settings > About

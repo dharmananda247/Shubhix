@@ -25,10 +25,19 @@ data class AppSettings(
     val djPrompt: String = DEF_DJ,
     val shubhuPrompt: String = DEF_SHUBHU,
     val speed: Float = 1f,
-    val retentionDays: Int = 30,     // 0 = keep chats forever
-    val onboarded: Boolean = false
+    val retentionDays: Int = 30,        // 0 = keep chats forever
+    val onboarded: Boolean = false,
+    val voiceReply: Boolean = true,     // speak replies out loud
+    val djVoice: String = "",           // "" = default voice
+    val shubhuVoice: String = "",
+    val djPitch: Float = 0.75f,         // lower = deeper
+    val shubhuPitch: Float = 1.2f,
+    val shareApps: Boolean = true,      // send installed app names to Gemini so it opens the right app
+    val listenLang: String = "hi-IN"    // speech recognition language
 ) {
     fun prompt() = if (persona == "DJ") djPrompt else shubhuPrompt
+    fun voiceName() = if (persona == "DJ") djVoice else shubhuVoice
+    fun pitch() = if (persona == "DJ") djPitch else shubhuPitch
 }
 
 class Prefs(private val ctx: Context) {
@@ -40,6 +49,13 @@ class Prefs(private val ctx: Context) {
     private val kSpeed = floatPreferencesKey("speed")
     private val kRetention = intPreferencesKey("retention")
     private val kOnboarded = booleanPreferencesKey("onboarded")
+    private val kVoiceReply = booleanPreferencesKey("voice_reply")
+    private val kDjVoice = stringPreferencesKey("dj_voice")
+    private val kShubhuVoice = stringPreferencesKey("shubhu_voice")
+    private val kDjPitch = floatPreferencesKey("dj_pitch")
+    private val kShubhuPitch = floatPreferencesKey("shubhu_pitch")
+    private val kShareApps = booleanPreferencesKey("share_apps")
+    private val kListen = stringPreferencesKey("listen_lang")
 
     val flow = ctx.store.data.map { p ->
         val d = AppSettings()
@@ -51,7 +67,14 @@ class Prefs(private val ctx: Context) {
             shubhuPrompt = p[kShubhu] ?: d.shubhuPrompt,
             speed = p[kSpeed] ?: d.speed,
             retentionDays = p[kRetention] ?: d.retentionDays,
-            onboarded = p[kOnboarded] ?: d.onboarded
+            onboarded = p[kOnboarded] ?: d.onboarded,
+            voiceReply = p[kVoiceReply] ?: d.voiceReply,
+            djVoice = p[kDjVoice] ?: d.djVoice,
+            shubhuVoice = p[kShubhuVoice] ?: d.shubhuVoice,
+            djPitch = p[kDjPitch] ?: d.djPitch,
+            shubhuPitch = p[kShubhuPitch] ?: d.shubhuPitch,
+            shareApps = p[kShareApps] ?: d.shareApps,
+            listenLang = p[kListen] ?: d.listenLang
         )
     }
 
@@ -60,6 +83,10 @@ class Prefs(private val ctx: Context) {
             it[kApi] = s.apiKey; it[kModel] = s.model; it[kPersona] = s.persona
             it[kDj] = s.djPrompt; it[kShubhu] = s.shubhuPrompt; it[kSpeed] = s.speed
             it[kRetention] = s.retentionDays; it[kOnboarded] = s.onboarded
+            it[kVoiceReply] = s.voiceReply
+            it[kDjVoice] = s.djVoice; it[kShubhuVoice] = s.shubhuVoice
+            it[kDjPitch] = s.djPitch; it[kShubhuPitch] = s.shubhuPitch
+            it[kShareApps] = s.shareApps; it[kListen] = s.listenLang
         }
     }
 }

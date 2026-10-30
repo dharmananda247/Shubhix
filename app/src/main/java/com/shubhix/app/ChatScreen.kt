@@ -68,7 +68,7 @@ fun ChatScreen(vm: MainVM) {
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        Header(vm.online, s.persona) { vm.setPersona(it) }
+        Header(vm.online, s.persona, s.voiceReply, { vm.setVoiceReply(!s.voiceReply) }) { vm.setPersona(it) }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (vm.messages.isEmpty() && !vm.thinking) {
                 EmptyState(s.persona) { vm.send(it) }
@@ -95,7 +95,7 @@ fun ChatScreen(vm: MainVM) {
 }
 
 @Composable
-private fun Header(online: Boolean, persona: String, onPersona: (String) -> Unit) {
+private fun Header(online: Boolean, persona: String, voiceOn: Boolean, onVoice: () -> Unit, onPersona: (String) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Image(painterResource(R.drawable.logo_head), null, Modifier.size(34.dp))
         Spacer(Modifier.width(10.dp))
@@ -108,6 +108,10 @@ private fun Header(online: Boolean, persona: String, onPersona: (String) -> Unit
             }
         }
         Spacer(Modifier.weight(1f))
+        Text(
+            if (voiceOn) "🔊" else "🔇", fontSize = 20.sp,
+            modifier = Modifier.clip(CircleShape).clickable(onClick = onVoice).padding(8.dp)
+        )
         PersonaSwitch(persona, onPersona)
     }
 }

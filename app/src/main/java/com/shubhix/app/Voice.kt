@@ -9,24 +9,39 @@ import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import java.util.Locale
 
-/** Speech-to-text (hi-IN) and text-to-speech with a lower pitch for DJ and higher for SHUBHU. */
+/** Speech-to-text and text-to-speech. Each persona can have its own voice and pitch. */
 class Voice(private val ctx: Context) {
     private var ready = false
     private val tts: TextToSpeech = TextToSpeech(ctx) { ready = it == TextToSpeech.SUCCESS }
     private var sr: SpeechRecognizer? = null
 
-    fun speak(text: String, persona: String, speed: Float) {
+    /** Voices installed on this phone for English and Hindi: (internal name, readable label). */
+    fun voices(): List<Pair<String, String>> = try {
+        if (!ready) emptyList() else tts.voices.orEmpty()
+            .filter { it.locale.language == "en" || it.locale.language == "hi" }
+            .sortedBy { it.locale.toString() + it.name }
+            .map { it.name to (it.locale.displayName + " · " + it.name) }
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    fun speak(text: String, persona: String, speed: Float, voiceName: String, pitch: Float) {
         if (!ready) return
-        val clean = text.replace(Regex("```[\\s\\S]*?```"), " code upar likha hai ")
-        tts.language = Locale("en", "IN")
-        tts.setPitch(if (persona == "DJ") 0.75f else 1.2f)
-        tts.setSpeechRate(speed)
-        tts.speak(clean, TextToSpeech.QUEUE_FLUSH, null, "shubhix")
+        try {
+            val clean = text.replace(Regex("```[\\s\\S]*?```"), " code is written above ")
+            val v = if (voiceName.isNotBlank()) tts.voices?.firstOrNull { it.name == voiceName } else null
+            if (v != null) tts.setVoice(v) else tts.setLanguage(Locale("en", "IN"))
+            tts.setPitch(pitch)
+            tts.setSpeechRate(speed)
+            tts.speak(clean, TextToSpeech.QUEUE_FLUSH, null, "shubhix")
+        } catch (e: Exception) {
+            // a TTS engine problem should never crash the app
+        }
     }
 
     fun stopSpeaking() { tts.stop() }
 
-    fun listen(onText: (String) -> Unit, onEnd: () -> Unit) {
+    fun listen(lang: String, onText: (String) -> Unit, onEnd: () -> Unit) {
         if (!SpeechRecognizer.isRecognitionAvailable(ctx)) { onEnd(); return }
         stopSpeaking()
         sr?.destroy()
@@ -48,7 +63,7 @@ class Voice(private val ctx: Context) {
             r.startListening(
                 Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
                     .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                    .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
+                    .putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang)
             )
         }
     }

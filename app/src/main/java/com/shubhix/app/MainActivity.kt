@@ -1,11 +1,13 @@
 package com.shubhix.app
 
 import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -56,7 +58,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        perms.launch(arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_CONTACTS))
+        val missing = listOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_CONTACTS)
+            .filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
+        if (missing.isNotEmpty()) perms.launch(missing.toTypedArray())
         setContent {
             val st by vm.settings.collectAsState()
             ShubhixTheme(accent = accentFor(st.persona)) {
@@ -138,7 +142,7 @@ fun App(vm: MainVM) {
         Box(Modifier.padding(pad).fillMaxSize()) {
             when (tab) {
                 0 -> ChatScreen(vm)
-                1 -> CommandsScreen { tab = 0; vm.send(it) }
+                1 -> CommandsScreen(vm) { tab = 0; vm.send(it) }
                 else -> SettingsScreen(vm)
             }
         }

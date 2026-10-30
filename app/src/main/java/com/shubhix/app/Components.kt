@@ -76,8 +76,8 @@ fun Waveform(color: Color) {
 }
 
 @Composable
-fun StatusDot(ok: Boolean, size: Dp = 8.dp) {
-    Box(Modifier.size(size).clip(CircleShape).background(if (ok) Good else Bad))
+fun StatusDot(ok: Boolean, size: Dp = 8.dp, color: Color? = null) {
+    Box(Modifier.size(size).clip(CircleShape).background(color ?: if (ok) Good else Bad))
 }
 
 @Composable

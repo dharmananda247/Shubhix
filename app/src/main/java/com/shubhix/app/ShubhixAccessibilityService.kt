@@ -4,7 +4,9 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.Intent
 import android.graphics.Path
+import android.content.Context
 import android.os.Bundle
+import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 
@@ -12,6 +14,12 @@ class ShubhixAccessibilityService : AccessibilityService() {
 
     companion object {
         @Volatile var instance: ShubhixAccessibilityService? = null
+
+        /** True when the switch is ON in Android's Accessibility settings (even if the service has not started yet). */
+        fun isEnabled(ctx: Context): Boolean {
+            val v = Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
+            return v.split(':').any { it.startsWith(ctx.packageName + "/") }
+        }
     }
 
     override fun onServiceConnected() { instance = this }

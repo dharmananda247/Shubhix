@@ -1,16 +1,21 @@
 package com.shubhix.app
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -18,12 +23,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -33,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -46,18 +55,24 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 fun SettingsScreen(vm: MainVM) {
     val s by vm.settings.collectAsState()
     val ctx = LocalContext.current
+    val accent = MaterialTheme.colorScheme.primary
 
     var api by remember(s.apiKey) { mutableStateOf(s.apiKey) }
     var model by remember(s.model) { mutableStateOf(s.model) }
     var show by remember { mutableStateOf(false) }
     var speed by remember(s.speed) { mutableFloatStateOf(s.speed) }
+    var djPitch by remember(s.djPitch) { mutableFloatStateOf(s.djPitch) }
+    var shubhuPitch by remember(s.shubhuPitch) { mutableFloatStateOf(s.shubhuPitch) }
     var editing by remember { mutableStateOf<String?>(null) }
+    var voicePick by remember { mutableStateOf<String?>(null) }
+    var pickModel by remember { mutableStateOf(false) }
     var tick by remember { mutableIntStateOf(0) }
     LifecycleResumeEffect(Unit) { tick++; onPauseOrDispose { } }
 
     val micOk = remember(tick) { ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED }
     val contactsOk = remember(tick) { ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED }
-    val accOk = remember(tick) { ShubhixAccessibilityService.instance != null }
+    val accRunning = remember(tick) { ShubhixAccessibilityService.instance != null }
+    val accEnabled = remember(tick) { ShubhixAccessibilityService.isEnabled(ctx) }
 
     val appSettings = { ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + ctx.packageName))) }
     val accSettings = { ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
@@ -77,40 +92,98 @@ fun SettingsScreen(vm: MainVM) {
             )
             OutlinedTextField(model, { model = it }, label = { Text("Model") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             Row(verticalAlignment = Alignment.CenterVertically) {
-                StatusDot(s.apiKey.isNotBlank())
+                StatusDot(
+                    vm.testOk == true, color = if (vm.testOk == null) Muted else null
+                )
                 Spacer(Modifier.width(8.dp))
-                Text(if (s.apiKey.isNotBlank()) "Key saved" else "No key yet", color = Muted, fontSize = 13.sp)
+                Text(
+                    when {
+                        vm.testMsg.isNotEmpty() -> vm.testMsg
+                        s.apiKey.isNotBlank() -> "Key saved. Tap Save & test to check it."
+                        else -> "No key yet"
+                    },
+                    color = when (vm.testOk) { true -> Good; false -> Bad; null -> Muted },
+                    fontSize = 13.sp
+                )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button({ vm.saveSettings(s.copy(apiKey = api.trim(), model = model.trim())) }, Modifier.weight(1f)) { Text("Save") }
-                OutlinedButton({ vm.testConnection(api.trim(), model.trim()) }, Modifier.weight(1f)) { Text("Test") }
+                Button({ vm.saveAndTest(s.copy(apiKey = api.trim(), model = model.trim())) }, Modifier.weight(1f)) { Text("Save & test") }
+                OutlinedButton({ pickModel = true }, Modifier.weight(1f)) { Text("Choose model") }
             }
-            if (vm.testResult.isNotEmpty()) Text(vm.testResult, color = Muted, fontSize = 13.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Let the AI see my app names")
+                    Text("Helps it open the right app. Only names are sent, nothing else.", color = Muted, fontSize = 12.sp)
+                }
+                Switch(s.shareApps, { vm.saveSettings(s.copy(shareApps = it)) })
+            }
         }
 
-        SectionCard("Personas") {
+        SectionCard("Voice and personas") {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Voice replies")
+                    Text("Speak answers out loud", color = Muted, fontSize = 12.sp)
+                }
+                Switch(s.voiceReply, { vm.setVoiceReply(it) })
+            }
+            Text("Listening language", color = Muted, fontSize = 13.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("hi-IN" to "Hindi + English", "en-IN" to "English").forEach { (code, label) ->
+                    FilterChip(selected = s.listenLang == code, onClick = { vm.saveSettings(s.copy(listenLang = code)) }, label = { Text(label) })
+                }
+            }
+            Text("Voice speed: ${"%.1f".format(speed)}x", color = Muted, fontSize = 13.sp)
+            Slider(speed, { speed = it }, valueRange = 0.6f..1.6f, onValueChangeFinished = { vm.saveSettings(s.copy(speed = speed)) })
+
             listOf("DJ", "SHUBHU").forEach { p ->
+                val pitch = if (p == "DJ") djPitch else shubhuPitch
+                val voiceName = if (p == "DJ") s.djVoice else s.shubhuVoice
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Avatar(p, 44.dp, ring = s.persona == p)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(p, fontWeight = FontWeight.SemiBold)
-                        Text(if (s.persona == p) "Active" else "Tap Use to switch", color = Muted, fontSize = 12.sp)
+                        Text(if (s.persona == p) "Active" else "Not active", color = Muted, fontSize = 12.sp)
                     }
                     if (s.persona != p) TextButton({ vm.setPersona(p) }) { Text("Use") }
                     TextButton({ editing = p }) { Text("Edit prompt") }
                 }
+                Text("$p tone (pitch): ${"%.2f".format(pitch)}  ·  lower is deeper", color = Muted, fontSize = 13.sp)
+                Slider(
+                    pitch,
+                    { if (p == "DJ") djPitch = it else shubhuPitch = it },
+                    valueRange = 0.5f..1.6f,
+                    onValueChangeFinished = {
+                        vm.saveSettings(if (p == "DJ") s.copy(djPitch = djPitch) else s.copy(shubhuPitch = shubhuPitch))
+                    }
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton({ voicePick = p }, Modifier.weight(1f)) {
+                        Text(if (voiceName.isEmpty()) "Voice: Default" else "Voice: change")
+                    }
+                    TextButton({ vm.preview(p, voiceName, pitch) }) { Text("▶ Preview") }
+                }
             }
-            Text("Voice speed: ${"%.1f".format(speed)}x", color = Muted, fontSize = 13.sp)
-            Slider(speed, { speed = it }, valueRange = 0.6f..1.6f, onValueChangeFinished = { vm.saveSettings(s.copy(speed = speed)) })
         }
 
         SectionCard("Permissions") {
-            PermRow("Microphone", micOk, appSettings)
-            PermRow("Contacts (for calls)", contactsOk, appSettings)
-            PermRow("Screen control (Accessibility)", accOk, accSettings)
+            PermRow("Microphone", micOk, null, appSettings)
+            PermRow("Contacts (for calls)", contactsOk, null, appSettings)
+            PermRow(
+                "Screen control (Accessibility)", accRunning,
+                when {
+                    accRunning -> null
+                    accEnabled -> "Turned on but not running. Switch it off and on again."
+                    else -> "Off. Tap Enable, open Installed apps, choose Shubhix and turn it on."
+                },
+                accSettings
+            )
+            OutlinedButton({ vm.testScreenControl() }, Modifier.fillMaxWidth()) { Text("Test screen control") }
+            if (vm.accTest.isNotEmpty()) Text(vm.accTest, color = Muted, fontSize = 13.sp)
             Text(
-                "Screen control is used only when you ask Shubhix to tap, scroll or type. Android never turns it on automatically.",
+                "Screen control acts on the app that is open on screen. Android never turns it on automatically. " +
+                    "If it keeps switching off, set Shubhix to Unrestricted in the phone's battery settings.",
                 color = Muted, fontSize = 12.sp
             )
         }
@@ -126,8 +199,68 @@ fun SettingsScreen(vm: MainVM) {
             Text("Chats are stored only on this phone.", color = Muted, fontSize = 12.sp)
         }
 
-        SectionCard("About") { Text("Shubhix v1.2", color = Muted) }
+        SectionCard("About") {
+            Text("Shubhix v1.3", color = Muted)
+            if (vm.crash.isNotEmpty()) {
+                Text("The app closed unexpectedly last time. Copy this and send it to be fixed:", color = Bad, fontSize = 12.sp)
+                Text(vm.crash.take(700), color = Muted, fontSize = 11.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton({
+                        val cb = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        cb.setPrimaryClip(ClipData.newPlainText("Shubhix crash", vm.crash))
+                    }) { Text("Copy") }
+                    OutlinedButton({ vm.clearCrash() }) { Text("Clear") }
+                }
+            }
+        }
         Spacer(Modifier.padding(8.dp))
+    }
+
+    // ---- dialogs ----
+    if (pickModel) {
+        LaunchedEffect(Unit) { vm.loadModels(api.trim()) }
+        AlertDialog(
+            onDismissRequest = { pickModel = false },
+            title = { Text("Choose model") },
+            text = {
+                Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                    if (vm.modelsMsg.isNotEmpty()) Text(vm.modelsMsg, color = Muted, fontSize = 13.sp)
+                    vm.models.forEach { m ->
+                        Text(
+                            m,
+                            Modifier.fillMaxWidth().clickable {
+                                model = m
+                                vm.saveSettings(s.copy(apiKey = api.trim(), model = m))
+                                pickModel = false
+                            }.padding(vertical = 12.dp),
+                            color = if (m == model) accent else Color.White
+                        )
+                    }
+                }
+            },
+            confirmButton = { TextButton({ pickModel = false }) { Text("Close") } }
+        )
+    }
+
+    voicePick?.let { p ->
+        val list = remember(p) { vm.voices() }
+        val cur = if (p == "DJ") s.djVoice else s.shubhuVoice
+        val pitch = if (p == "DJ") djPitch else shubhuPitch
+        val pick = { name: String -> vm.saveSettings(if (p == "DJ") s.copy(djVoice = name) else s.copy(shubhuVoice = name)) }
+        AlertDialog(
+            onDismissRequest = { voicePick = null },
+            title = { Text("$p voice") },
+            text = {
+                Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
+                    VoiceRow("Default voice", cur.isEmpty(), { pick("") }, { vm.preview(p, "", pitch) })
+                    if (list.isEmpty()) {
+                        Text("No other voices found. Add voices in Android Settings > Text-to-speech.", color = Muted, fontSize = 12.sp)
+                    }
+                    list.forEach { (name, label) -> VoiceRow(label, name == cur, { pick(name) }, { vm.preview(p, name, pitch) }) }
+                }
+            },
+            confirmButton = { TextButton({ voicePick = null }) { Text("Done") } }
+        )
     }
 
     editing?.let { p ->
@@ -148,11 +281,22 @@ fun SettingsScreen(vm: MainVM) {
 }
 
 @Composable
-private fun PermRow(name: String, ok: Boolean, onFix: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        StatusDot(ok)
-        Spacer(Modifier.width(10.dp))
-        Text(name, modifier = Modifier.weight(1f))
-        if (ok) Text("On", color = Muted, fontSize = 13.sp) else TextButton(onFix) { Text("Enable") }
+private fun VoiceRow(label: String, selected: Boolean, onPick: () -> Unit, onPreview: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onPick).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), color = if (selected) MaterialTheme.colorScheme.primary else Color.White, fontSize = 13.sp)
+        TextButton(onPreview) { Text("▶") }
+    }
+}
+
+@Composable
+private fun PermRow(name: String, ok: Boolean, hint: String?, onFix: () -> Unit) {
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            StatusDot(ok)
+            Spacer(Modifier.width(10.dp))
+            Text(name, modifier = Modifier.weight(1f))
+            if (ok) Text("On", color = Muted, fontSize = 13.sp) else TextButton(onFix) { Text("Enable") }
+        }
+        if (hint != null) Text(hint, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(start = 18.dp))
     }
 }
