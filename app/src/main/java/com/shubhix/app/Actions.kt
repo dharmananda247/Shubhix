@@ -33,6 +33,9 @@ object Actions {
         return notes.joinToString("; ").ifEmpty { null }
     }
 
+    /** Runs a single action; used by agent mode. Returns null on success or a short note. */
+    fun runOne(ctx: Context, a: JSONObject): String? = run(ctx, a)
+
     private fun go(ctx: Context, i: Intent) = ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
 
@@ -48,6 +51,7 @@ object Actions {
             "timer" -> {
                 go(ctx, Intent(AlarmClock.ACTION_SET_TIMER)
                     .putExtra(AlarmClock.EXTRA_LENGTH, a.optInt("seconds", 60))
+                    .putExtra(AlarmClock.EXTRA_MESSAGE, a.optString("label", "Shubhix timer"))
                     .putExtra(AlarmClock.EXTRA_SKIP_UI, true)); null
             }
             "alarm" -> {

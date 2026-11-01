@@ -41,17 +41,18 @@ class Voice(private val ctx: Context) {
 
     fun stopSpeaking() { tts.stop() }
 
-    fun listen(lang: String, onText: (String) -> Unit, onEnd: () -> Unit) {
-        if (!SpeechRecognizer.isRecognitionAvailable(ctx)) { onEnd(); return }
+    /** onEnd receives 0 when nothing was heard, -1 when speech recognition is missing, or the Android error code. */
+    fun listen(lang: String, preferOffline: Boolean, onText: (String) -> Unit, onEnd: (Int) -> Unit) {
+        if (!SpeechRecognizer.isRecognitionAvailable(ctx)) { onEnd(-1); return }
         stopSpeaking()
         sr?.destroy()
         sr = SpeechRecognizer.createSpeechRecognizer(ctx).also { r ->
             r.setRecognitionListener(object : RecognitionListener {
                 override fun onResults(results: Bundle?) {
                     val t = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
-                    if (t.isNullOrBlank()) onEnd() else onText(t)
+                    if (t.isNullOrBlank()) onEnd(SpeechRecognizer.ERROR_NO_MATCH) else onText(t)
                 }
-                override fun onError(error: Int) { onEnd() }
+                override fun onError(error: Int) { onEnd(error) }
                 override fun onReadyForSpeech(params: Bundle?) {}
                 override fun onBeginningOfSpeech() {}
                 override fun onRmsChanged(rmsdB: Float) {}
@@ -64,8 +65,15 @@ class Voice(private val ctx: Context) {
                 Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
                     .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                     .putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang)
+                    .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, preferOffline)
             )
         }
+    }
+
+    fun cancelListening() {
+        try { sr?.cancel() } catch (e: Exception) { /* ignore */ }
+        try { sr?.destroy() } catch (e: Exception) { /* ignore */ }
+        sr = null
     }
 
     fun release() { sr?.destroy(); tts.shutdown() }

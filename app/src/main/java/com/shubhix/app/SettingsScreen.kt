@@ -73,6 +73,9 @@ fun SettingsScreen(vm: MainVM) {
     val contactsOk = remember(tick) { ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED }
     val accRunning = remember(tick) { ShubhixAccessibilityService.instance != null }
     val accEnabled = remember(tick) { ShubhixAccessibilityService.isEnabled(ctx) }
+    val overlayOk = remember(tick) { BubbleService.canDraw(ctx) }
+    val notifOk = remember(tick) { NotificationStore.hasAccess(ctx) }
+    var newFact by remember { mutableStateOf("") }
 
     val appSettings = { ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + ctx.packageName))) }
     val accSettings = { ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
@@ -116,6 +119,16 @@ fun SettingsScreen(vm: MainVM) {
                     Text("Helps it open the right app. Only names are sent, nothing else.", color = Muted, fontSize = 12.sp)
                 }
                 Switch(s.shareApps, { vm.saveSettings(s.copy(shareApps = it)) })
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Multi-step phone control")
+                    Text(
+                        "Lets the AI look at the screen and finish tasks across apps. While a task runs, the on-screen text of that app is sent to Gemini. Password fields, banking and payment apps are never read.",
+                        color = Muted, fontSize = 12.sp
+                    )
+                }
+                Switch(s.agentOn, { vm.saveSettings(s.copy(agentOn = it)) })
             }
         }
 
@@ -167,9 +180,33 @@ fun SettingsScreen(vm: MainVM) {
             }
         }
 
+        SectionCard("Floating bubble") {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Show the bubble over other apps")
+                    Text(
+                        "Tap to talk from any app. Drag to move, long-press to open Shubhix, tap while a task runs to stop it.",
+                        color = Muted, fontSize = 12.sp
+                    )
+                }
+                Switch(s.bubbleOn, { on ->
+                    vm.saveSettings(s.copy(bubbleOn = on))
+                    if (!on) BubbleService.stop(ctx)
+                    else if (!BubbleService.canDraw(ctx)) openOverlaySettings(ctx)
+                    else if (!micOk) appSettings()
+                    else BubbleService.start(ctx)
+                })
+            }
+            Text("Tip: add the Talk to Shubhix tile to your phone's quick settings panel for one-tap talking.", color = Muted, fontSize = 12.sp)
+        }
+
         SectionCard("Permissions") {
             PermRow("Microphone", micOk, null, appSettings)
             PermRow("Contacts (for calls)", contactsOk, null, appSettings)
+            PermRow("Display over other apps", overlayOk, null) { openOverlaySettings(ctx) }
+            PermRow("Notification access (read aloud)", notifOk, null) {
+                ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
             PermRow(
                 "Screen control (Accessibility)", accRunning,
                 when {
@@ -180,6 +217,7 @@ fun SettingsScreen(vm: MainVM) {
                 accSettings
             )
             OutlinedButton({ vm.testScreenControl() }, Modifier.fillMaxWidth()) { Text("Test screen control") }
+            OutlinedButton({ openBattery(ctx) }, Modifier.fillMaxWidth()) { Text("Keep Shubhix alive (battery)") }
             if (vm.accTest.isNotEmpty()) Text(vm.accTest, color = Muted, fontSize = 13.sp)
             Text(
                 "Screen control acts on the app that is open on screen. Android never turns it on automatically. " +
@@ -195,12 +233,32 @@ fun SettingsScreen(vm: MainVM) {
                     FilterChip(selected = s.retentionDays == d, onClick = { vm.saveSettings(s.copy(retentionDays = d)) }, label = { Text(label) })
                 }
             }
+            OutlinedButton({
+                val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, vm.exportText())
+                ctx.startActivity(Intent.createChooser(send, "Share chat").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }, Modifier.fillMaxWidth()) { Text("Export chat") }
             OutlinedButton({ vm.clearChat() }, Modifier.fillMaxWidth()) { Text("Clear chat now") }
             Text("Chats are stored only on this phone.", color = Muted, fontSize = 12.sp)
         }
 
+        SectionCard("Memory") {
+            Text("What DJ and SHUBHU remember about you. Say \"remember that…\" to add something. It is stored only on this phone and sent to Gemini with your messages.", color = Muted, fontSize = 12.sp)
+            if (vm.facts.isEmpty()) Text("Nothing yet.", color = Muted, fontSize = 13.sp)
+            vm.facts.toList().forEach { f ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(f, Modifier.weight(1f), fontSize = 13.sp)
+                    TextButton({ vm.removeFact(f) }) { Text("Delete", color = Bad, fontSize = 12.sp) }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(newFact, { newFact = it }, label = { Text("Add something") }, singleLine = true, modifier = Modifier.weight(1f))
+                TextButton({ if (newFact.isNotBlank()) { vm.addFact(newFact); newFact = "" } }) { Text("Add") }
+            }
+            if (vm.facts.isNotEmpty()) OutlinedButton({ vm.clearFacts() }, Modifier.fillMaxWidth()) { Text("Forget everything") }
+        }
+
         SectionCard("About") {
-            Text("Shubhix v1.3", color = Muted)
+            Text("Shubhix v2.0", color = Muted)
             if (vm.crash.isNotEmpty()) {
                 Text("The app closed unexpectedly last time. Copy this and send it to be fixed:", color = Bad, fontSize = 12.sp)
                 Text(vm.crash.take(700), color = Muted, fontSize = 11.sp)
@@ -299,4 +357,29 @@ private fun PermRow(name: String, ok: Boolean, hint: String?, onFix: () -> Unit)
         }
         if (hint != null) Text(hint, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(start = 18.dp))
     }
+}
+
+
+/** Opens the battery optimisation list so Shubhix can be set to "Don't optimise" / Unrestricted. */
+private fun openBattery(ctx: Context) {
+    try {
+        ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    } catch (e: Exception) {
+        try {
+            ctx.startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + ctx.packageName))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        } catch (e2: Exception) { /* nothing else to try */ }
+    }
+}
+
+
+private fun openOverlaySettings(ctx: Context) {
+    try {
+        ctx.startActivity(
+            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + ctx.packageName))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    } catch (e: Exception) { /* ignore */ }
 }

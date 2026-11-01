@@ -33,7 +33,9 @@ data class AppSettings(
     val djPitch: Float = 0.75f,         // lower = deeper
     val shubhuPitch: Float = 1.2f,
     val shareApps: Boolean = true,      // send installed app names to Gemini so it opens the right app
-    val listenLang: String = "hi-IN"    // speech recognition language
+    val listenLang: String = "hi-IN",   // speech recognition language
+    val agentOn: Boolean = true,        // allow multi-step screen control (reads on-screen text during a task)
+    val bubbleOn: Boolean = false       // floating avatar over other apps
 ) {
     fun prompt() = if (persona == "DJ") djPrompt else shubhuPrompt
     fun voiceName() = if (persona == "DJ") djVoice else shubhuVoice
@@ -56,6 +58,8 @@ class Prefs(private val ctx: Context) {
     private val kShubhuPitch = floatPreferencesKey("shubhu_pitch")
     private val kShareApps = booleanPreferencesKey("share_apps")
     private val kListen = stringPreferencesKey("listen_lang")
+    private val kAgent = booleanPreferencesKey("agent_on")
+    private val kBubble = booleanPreferencesKey("bubble_on")
 
     val flow = ctx.store.data.map { p ->
         val d = AppSettings()
@@ -74,7 +78,9 @@ class Prefs(private val ctx: Context) {
             djPitch = p[kDjPitch] ?: d.djPitch,
             shubhuPitch = p[kShubhuPitch] ?: d.shubhuPitch,
             shareApps = p[kShareApps] ?: d.shareApps,
-            listenLang = p[kListen] ?: d.listenLang
+            listenLang = p[kListen] ?: d.listenLang,
+            agentOn = p[kAgent] ?: d.agentOn,
+            bubbleOn = p[kBubble] ?: d.bubbleOn
         )
     }
 
@@ -86,7 +92,7 @@ class Prefs(private val ctx: Context) {
             it[kVoiceReply] = s.voiceReply
             it[kDjVoice] = s.djVoice; it[kShubhuVoice] = s.shubhuVoice
             it[kDjPitch] = s.djPitch; it[kShubhuPitch] = s.shubhuPitch
-            it[kShareApps] = s.shareApps; it[kListen] = s.listenLang
+            it[kShareApps] = s.shareApps; it[kListen] = s.listenLang; it[kAgent] = s.agentOn; it[kBubble] = s.bubbleOn
         }
     }
 }

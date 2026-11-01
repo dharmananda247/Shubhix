@@ -39,7 +39,42 @@ object LocalCommands {
         val n = norm(raw)
         custom.firstOrNull { norm(it.phrase).length >= 3 && n.contains(norm(it.phrase)) }?.let { return fromCustom(it) }
 
+        // 0.5) memory
+        Regex("^(remember that|remember|yaad rakho|yaad rakhna|याद रखो|याद रखना)\\s+(.+)$").find(t)?.let {
+            val fact = it.groupValues[2].trim()
+            if (fact.length >= 3) return Result("Got it. I'll remember that.", listOf(act("remember", "fact" to fact)))
+        }
+        Regex("^(forget|bhool jao|भूल जाओ)\\s+(.+)$").find(t)?.let {
+            val fact = it.groupValues[2].trim()
+            if (fact.length >= 4) return Result("Okay, I've forgotten that.", listOf(act("forget", "fact" to fact)))
+        }
+
         // 1) answers the phone can give by itself
+        if (has(t, "read notification", "read my notification", "notification padho", "notification sunao", "नोटिफिकेशन पढ़ो", "नोटिफिकेशन सुनाओ")) {
+            if (!NotificationStore.hasAccess(ctx))
+                return Result("Turn on Notification access for Shubhix in Settings > Permissions first.", emptyList())
+            val items = NotificationStore.latest(5)
+            return if (items.isEmpty()) Result("You have no new notifications.", emptyList())
+            else Result(
+                "You have ${NotificationStore.total()} notifications. " +
+                    items.joinToString(" ") { "${it.app}: ${it.title}. ${it.text}." },
+                emptyList()
+            )
+        }
+        if (has(t, "briefing", "सुबह की जानकारी")) {
+            val b = ctx.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+            val now = Date()
+            val counts = if (NotificationStore.hasAccess(ctx) && NotificationStore.total() > 0)
+                " You have ${NotificationStore.total()} notifications: " +
+                    NotificationStore.counts().entries.joinToString(", ") { "${it.key} ${it.value}" } + "."
+            else ""
+            return Result(
+                "It's ${SimpleDateFormat("h:mm a", Locale.ENGLISH).format(now)} on " +
+                    "${SimpleDateFormat("EEEE, d MMMM", Locale.ENGLISH).format(now)}. " +
+                    "Battery is at ${b.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)}%.$counts",
+                emptyList()
+            )
+        }
         if (has(t, "what time", "time kya", "samay kya", "kitne baje", "कितने बजे", "समय क्या", "टाइम क्या"))
             return Result("It's ${SimpleDateFormat("h:mm a", Locale.ENGLISH).format(Date())}.", emptyList())
         if (has(t, "what date", "today's date", "aaj ki date", "aaj kya tarikh", "आज की तारीख", "तारीख क्या", "आज कौन सा दिन"))

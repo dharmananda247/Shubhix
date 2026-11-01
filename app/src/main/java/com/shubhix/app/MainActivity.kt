@@ -1,7 +1,9 @@
 package com.shubhix.app
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -53,12 +55,45 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
-    private val vm: MainVM by viewModels()
+    private val vm: MainVM by lazy { (application as ShubhixApp).vm }
     private val perms = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {}
+
+    override fun onStart() {
+        super.onStart()
+        (application as ShubhixApp).visible = true
+    }
+
+    override fun onStop() {
+        (application as ShubhixApp).visible = false
+        super.onStop()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        vm.healScreenControl()
+        // Bring the floating bubble back if it is switched on and everything it needs is allowed.
+        val micOk = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        if (vm.settings.value.bubbleOn && micOk && BubbleService.canDraw(this) && !BubbleService.running) BubbleService.start(this)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleListenIntent(intent)
+    }
+
+    private fun handleListenIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra("listen", false) == true) {
+            intent.removeExtra("listen")
+            vm.mic()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val missing = listOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_CONTACTS)
+        val wanted = mutableListOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.READ_CONTACTS)
+        if (Build.VERSION.SDK_INT >= 33) wanted.add(Manifest.permission.POST_NOTIFICATIONS)
+        val missing = wanted
             .filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
         if (missing.isNotEmpty()) perms.launch(missing.toTypedArray())
         setContent {
@@ -73,6 +108,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        handleListenIntent(intent)
     }
 }
 

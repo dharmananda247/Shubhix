@@ -1,5 +1,7 @@
 package com.shubhix.app
 
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -36,6 +38,9 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,6 +65,12 @@ fun ChatScreen(vm: MainVM) {
     val s by vm.settings.collectAsState()
     var input by remember { mutableStateOf("") }
     val list = rememberLazyListState()
+    val ctx = LocalContext.current
+    var tick by remember { mutableIntStateOf(0) }
+    LifecycleResumeEffect(Unit) { tick++; onPauseOrDispose { } }
+    val accStopped = remember(tick) {
+        ShubhixAccessibilityService.isEnabled(ctx) && ShubhixAccessibilityService.instance == null
+    }
     val send = { if (input.isNotBlank()) { vm.send(input); input = "" } }
 
     LaunchedEffect(vm.messages.size, vm.thinking) {
@@ -69,6 +80,11 @@ fun ChatScreen(vm: MainVM) {
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Header(vm.online, s.persona, s.voiceReply, { vm.setVoiceReply(!s.voiceReply) }) { vm.setPersona(it) }
+        if (accStopped) {
+            Banner("Screen control stopped. Android switched it off.", "Fix") {
+                ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
+        }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (vm.messages.isEmpty() && !vm.thinking) {
                 EmptyState(s.persona) { vm.send(it) }
@@ -90,6 +106,7 @@ fun ChatScreen(vm: MainVM) {
                 Text("Listening…", color = Muted, fontSize = 13.sp)
             }
         }
+        if (vm.agentRunning) Banner("🤖 " + vm.agentStatus.ifEmpty { "Working…" }, "Stop", MaterialTheme.colorScheme.primary) { vm.stopAgent() }
         InputBar(input, { input = it }, vm.listening, send) { vm.mic() }
     }
 }
@@ -269,5 +286,20 @@ private fun InputBar(
                 contentAlignment = Alignment.Center
             ) { Text(if (listening) "●" else "🎤", fontSize = 20.sp) }
         }
+    }
+}
+
+
+@Composable
+private fun Banner(text: String, action: String, color: Color = Bad, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(shape)
+            .background(color.copy(alpha = 0.15f)).border(1.dp, color.copy(alpha = 0.5f), shape)
+            .padding(start = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text, Modifier.weight(1f), fontSize = 12.sp)
+        TextButton(onClick) { Text(action, fontSize = 12.sp) }
     }
 }

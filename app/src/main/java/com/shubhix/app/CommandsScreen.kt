@@ -33,14 +33,27 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private data class Cmd(val text: String, val online: Boolean = false)
+private data class Cmd(val text: String, val online: Boolean = false, val prompt: String = text)
 private data class Group(val title: String, val cmds: List<Cmd>)
 
 private val groups = listOf(
     Group("Apps", listOf(Cmd("Open WhatsApp"), Cmd("Open camera"), Cmd("Open Chrome"), Cmd("Open Wi-Fi settings"))),
     Group("Media", listOf(Cmd("Play Arijit Singh songs", true), Cmd("Pause"), Cmd("Next song"), Cmd("Volume up"))),
     Group("Screen", listOf(Cmd("Scroll down"), Cmd("Go back"), Cmd("Go home"), Cmd("Recent apps"), Cmd("Take a screenshot"))),
-    Group("Tools", listOf(Cmd("Torch on"), Cmd("What time is it"), Cmd("Battery level"), Cmd("Set a 10 minute timer"), Cmd("Call Mom"), Cmd("Write a Python calculator", true)))
+    Group("Tools", listOf(Cmd("Torch on"), Cmd("What time is it"), Cmd("Battery level"), Cmd("Daily briefing"), Cmd("Read my notifications"), Cmd("Set a 10 minute timer"), Cmd("Call Mom"), Cmd("Write a Python calculator", true))),
+    Group("Phone tasks (AI)", listOf(
+        Cmd("Open YouTube, search bollywood songs and play it", true),
+        Cmd("Open WhatsApp and message Mom hi", true),
+        Cmd("Open settings and find battery usage", true)
+    )),
+    Group("Study", listOf(
+        Cmd("Quiz me: Tally Prime", true, "Quiz me with 5 multiple-choice questions on Tally Prime. Ask one question at a time, wait for my answer, then say if it is right, explain briefly, and ask the next one."),
+        Cmd("Practice journal entries", true, "Give me one journal entry practice transaction at a time (Indian accounting). Wait for my answer, then check it and explain the debit and credit rule."),
+        Cmd("Explain GST simply", true, "Explain GST in India in simple steps with one small example, covering CGST, SGST and IGST."),
+        Cmd("SBI Clerk reasoning quiz", true, "Ask me one SBI Clerk prelims reasoning question at a time with four options. Wait for my answer, check it and explain the method."),
+        Cmd("SBI Clerk maths quiz", true, "Ask me one SBI Clerk prelims quantitative aptitude question at a time with four options. Wait for my answer, check it and show a quick method."),
+        Cmd("SBI Clerk English quiz", true, "Ask me one SBI Clerk prelims English language question at a time (grammar, cloze or error spotting). Wait for my answer, then explain.")
+    ))
 )
 
 private val customTypes = listOf(
@@ -75,7 +88,7 @@ fun CommandsScreen(vm: MainVM, onTry: (String) -> Unit) {
         items(vm.custom.toList()) { c -> CustomRow(c, { onTry(c.phrase) }, { vm.removeCustom(c) }) }
         groups.forEach { g ->
             item { Text(g.title.uppercase(), color = Glow, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp, modifier = Modifier.padding(top = 12.dp)) }
-            items(g.cmds) { c -> CommandRow(c) { onTry(c.text) } }
+            items(g.cmds) { c -> CommandRow(c) { onTry(c.prompt) } }
         }
         item { Box(Modifier.padding(8.dp)) }
     }

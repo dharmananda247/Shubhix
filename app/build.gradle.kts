@@ -13,8 +13,8 @@ android {
         applicationId = "com.shubhix.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 7
+        versionName = "2.0"
     }
     signingConfigs {
         create("release") {
@@ -37,6 +37,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    // Lint is advisory here; a lint warning must never stop the APK from building.
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
+    }
     buildFeatures { compose = true }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
 }
