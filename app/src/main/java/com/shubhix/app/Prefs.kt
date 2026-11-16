@@ -35,7 +35,12 @@ data class AppSettings(
     val shareApps: Boolean = true,      // send installed app names to Gemini so it opens the right app
     val listenLang: String = "hi-IN",   // speech recognition language
     val agentOn: Boolean = true,        // allow multi-step screen control (reads on-screen text during a task)
-    val bubbleOn: Boolean = false       // floating avatar over other apps
+    val bubbleOn: Boolean = false,      // floating avatar over other apps
+    val theme: String = "gaming",       // "gaming" (neon) or "classic"
+    val confirmFirstCall: Boolean = true,
+    val musicApp: String = "",          // preferred music app package, "" = let Android choose
+    val checklistDismissed: Boolean = false,
+    val visionOn: Boolean = true        // agent may look at a screenshot when the screen cannot be read
 ) {
     fun prompt() = if (persona == "DJ") djPrompt else shubhuPrompt
     fun voiceName() = if (persona == "DJ") djVoice else shubhuVoice
@@ -60,6 +65,11 @@ class Prefs(private val ctx: Context) {
     private val kListen = stringPreferencesKey("listen_lang")
     private val kAgent = booleanPreferencesKey("agent_on")
     private val kBubble = booleanPreferencesKey("bubble_on")
+    private val kTheme = stringPreferencesKey("theme")
+    private val kConfirmCall = booleanPreferencesKey("confirm_call")
+    private val kMusic = stringPreferencesKey("music_app")
+    private val kChecklist = booleanPreferencesKey("checklist_done")
+    private val kVision = booleanPreferencesKey("vision_on")
 
     val flow = ctx.store.data.map { p ->
         val d = AppSettings()
@@ -80,7 +90,12 @@ class Prefs(private val ctx: Context) {
             shareApps = p[kShareApps] ?: d.shareApps,
             listenLang = p[kListen] ?: d.listenLang,
             agentOn = p[kAgent] ?: d.agentOn,
-            bubbleOn = p[kBubble] ?: d.bubbleOn
+            bubbleOn = p[kBubble] ?: d.bubbleOn,
+            theme = p[kTheme] ?: d.theme,
+            confirmFirstCall = p[kConfirmCall] ?: d.confirmFirstCall,
+            musicApp = p[kMusic] ?: d.musicApp,
+            checklistDismissed = p[kChecklist] ?: d.checklistDismissed,
+            visionOn = p[kVision] ?: d.visionOn
         )
     }
 
@@ -93,6 +108,8 @@ class Prefs(private val ctx: Context) {
             it[kDjVoice] = s.djVoice; it[kShubhuVoice] = s.shubhuVoice
             it[kDjPitch] = s.djPitch; it[kShubhuPitch] = s.shubhuPitch
             it[kShareApps] = s.shareApps; it[kListen] = s.listenLang; it[kAgent] = s.agentOn; it[kBubble] = s.bubbleOn
+            it[kTheme] = s.theme; it[kConfirmCall] = s.confirmFirstCall; it[kMusic] = s.musicApp
+            it[kChecklist] = s.checklistDismissed; it[kVision] = s.visionOn
         }
     }
 }

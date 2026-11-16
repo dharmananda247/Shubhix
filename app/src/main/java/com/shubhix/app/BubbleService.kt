@@ -64,7 +64,7 @@ class BubbleService : Service() {
                     image?.setImageResource(if (s.persona == "DJ") R.drawable.avatar_dj else R.drawable.avatar_shubhu)
                 }
                 val color = when {
-                    vm.listening -> 0xFFEF4444.toInt()      // red: listening
+                    vm.listening -> (if (Palette.gaming) Cyan.toArgb() else 0xFFEF4444.toInt())   // listening
                     vm.agentRunning -> 0xFFF59E0B.toInt()   // amber: working on a task
                     vm.thinking -> 0xFFF59E0B.toInt()
                     else -> accentFor(s.persona).toArgb()
@@ -101,7 +101,7 @@ class BubbleService : Service() {
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val n = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_notif)
-            .setContentTitle("Shubhix is ready")
+            .setContentTitle("Shubhix AI is ready")
             .setContentText("Tap the floating avatar to talk")
             .setContentIntent(open)
             .setOngoing(true)

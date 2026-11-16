@@ -1,6 +1,9 @@
 package com.shubhix.app
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.provider.Settings
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -23,35 +26,37 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -59,11 +64,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LifecycleResumeEffect
 
 @Composable
-fun ChatScreen(vm: MainVM) {
+fun ChatScreen(vm: MainVM, goSettings: () -> Unit) {
     val s by vm.settings.collectAsState()
     var input by remember { mutableStateOf("") }
+    var askKind by remember { mutableStateOf<String?>(null) }
     val list = rememberLazyListState()
     val ctx = LocalContext.current
     var tick by remember { mutableIntStateOf(0) }
@@ -87,7 +95,7 @@ fun ChatScreen(vm: MainVM) {
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (vm.messages.isEmpty() && !vm.thinking) {
-                EmptyState(s.persona) { vm.send(it) }
+                HomeContent(vm, s, tick, goSettings) { askKind = it }
             } else {
                 LazyColumn(state = list, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(vm.messages) { Bubble(it, s.persona) }
@@ -101,13 +109,25 @@ fun ChatScreen(vm: MainVM) {
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Waveform(MaterialTheme.colorScheme.primary)
+                Waveform(if (Palette.gaming) Cyan else MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(12.dp))
-                Text("Listening…", color = Muted, fontSize = 13.sp)
+                Text("Listening… tap the mic to stop", color = Muted, fontSize = 13.sp)
             }
         }
         if (vm.agentRunning) Banner("🤖 " + vm.agentStatus.ifEmpty { "Working…" }, "Stop", MaterialTheme.colorScheme.primary) { vm.stopAgent() }
         InputBar(input, { input = it }, vm.listening, send) { vm.mic() }
+    }
+
+    askKind?.let { kind ->
+        AskDialog(kind, { askKind = null }) { a, b ->
+            askKind = null
+            when (kind) {
+                "Call" -> vm.send("call $a")
+                "Music" -> vm.send("play $a")
+                "Video" -> vm.send("play $a on youtube")
+                else -> vm.send("message $a on whatsapp saying $b")
+            }
+        }
     }
 }
 
@@ -117,7 +137,7 @@ private fun Header(online: Boolean, persona: String, voiceOn: Boolean, onVoice: 
         Image(painterResource(R.drawable.logo_head), null, Modifier.size(34.dp))
         Spacer(Modifier.width(10.dp))
         Column {
-            Text("Shubhix", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("Shubhix AI", fontSize = 19.sp, fontWeight = FontWeight.Bold)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 StatusDot(online, 6.dp)
                 Spacer(Modifier.width(6.dp))
@@ -156,26 +176,85 @@ private fun PersonaSwitch(selected: String, onSelect: (String) -> Unit) {
     }
 }
 
+/** The empty-chat screen: big avatar, setup checklist, six one-tap buttons. */
 @Composable
-private fun EmptyState(persona: String, onTry: (String) -> Unit) {
+private fun HomeContent(vm: MainVM, s: AppSettings, tick: Int, goSettings: () -> Unit, onTile: (String) -> Unit) {
+    val ctx = LocalContext.current
+    val micOk = remember(tick) { ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED }
+    val contactsOk = remember(tick) { ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED }
+    val callOk = remember(tick) { ContextCompat.checkSelfPermission(ctx, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED }
+    val accOk = remember(tick) { ShubhixAccessibilityService.instance != null }
+    val keyOk = s.apiKey.isNotBlank()
+    val appInfo = { ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + ctx.packageName)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    val showSetup = !s.checklistDismissed && !(keyOk && micOk && contactsOk && callOk && accOk)
+
     Column(
-        Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        GlowAvatar(persona, 120.dp)
-        Spacer(Modifier.height(24.dp))
-        Text(if (persona == "DJ") "Hey, I'm DJ." else "Hi, I'm SHUBHU.", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(4.dp))
-        Text("Say it or type it. I'll handle the rest.", color = Muted, fontSize = 14.sp)
-        Spacer(Modifier.height(24.dp))
-        listOf(
-            listOf("Open WhatsApp", "Torch on"),
-            listOf("Play Arijit Singh songs", "Write a Python calculator")
-        ).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { row.forEach { QuickChip(it, onTry) } }
-            Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(8.dp))
+        GlowAvatar(s.persona, 84.dp)
+        Spacer(Modifier.height(12.dp))
+        Text(if (s.persona == "DJ") "Hey, I'm DJ." else "Hi, I'm SHUBHU.", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("Say it or tap it. I'll handle the rest.", color = Muted, fontSize = 13.sp)
+        Spacer(Modifier.height(16.dp))
+
+        if (showSetup) {
+            val shape = RoundedCornerShape(18.dp)
+            Column(
+                Modifier.fillMaxWidth().clip(shape).background(Panel).border(1.dp, BorderC, shape).padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text("GET READY", color = Glow, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp)
+                SetupRow("Gemini API key", keyOk) { goSettings() }
+                SetupRow("Microphone", micOk, appInfo)
+                SetupRow("Contacts (to find people)", contactsOk, appInfo)
+                SetupRow("Phone calls (to dial for you)", callOk, appInfo)
+                SetupRow("Screen control (tap, scroll, agent)", accOk) {
+                    ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }
+                Text("Then try:", color = Muted, fontSize = 12.sp)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("Torch on", "What time is it", "Open gallery").forEach { QuickChip(it) { c -> vm.send(c) } }
+                }
+                TextButton({ vm.saveSettings(s.copy(checklistDismissed = true)) }) { Text("Hide this", fontSize = 12.sp) }
+            }
+            Spacer(Modifier.height(14.dp))
         }
+
+        val rows = listOf(
+            listOf("📞" to "Call", "🎵" to "Music", "▶️" to "Video"),
+            listOf("🖼️" to "Gallery", "📷" to "Camera", "💬" to "WhatsApp")
+        )
+        rows.forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                row.forEach { t -> QuickTile(t.first, t.second, Modifier.weight(1f)) { onTile(t.second) } }
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+    }
+}
+
+@Composable
+private fun SetupRow(label: String, ok: Boolean, onFix: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        StatusDot(ok)
+        Spacer(Modifier.width(10.dp))
+        Text(label, Modifier.weight(1f), fontSize = 13.sp)
+        if (!ok) TextButton(onFix) { Text("Fix", fontSize = 12.sp) }
+    }
+}
+
+@Composable
+private fun QuickTile(icon: String, label: String, modifier: Modifier, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(18.dp)
+    Column(
+        modifier.clip(shape).background(Panel).border(1.dp, BorderC, shape).clickable(onClick = onClick).padding(vertical = 14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(icon, fontSize = 26.sp)
+        Spacer(Modifier.height(4.dp))
+        Text(label, fontSize = 12.sp, color = Color.White)
     }
 }
 
@@ -186,6 +265,35 @@ fun QuickChip(text: String, onClick: (String) -> Unit) {
         Modifier.clip(shape).background(Panel).border(1.dp, BorderC, shape)
             .clickable { onClick(text) }.padding(horizontal = 14.dp, vertical = 9.dp)
     ) { Text(text, fontSize = 13.sp) }
+}
+
+@Composable
+private fun AskDialog(kind: String, onDismiss: () -> Unit, onGo: (String, String) -> Unit) {
+    var a by remember { mutableStateOf("") }
+    var b by remember { mutableStateOf("") }
+    val title = when (kind) {
+        "Call" -> "Who do you want to call?"
+        "Music" -> "Which song?"
+        "Video" -> "What should I play on YouTube?"
+        else -> "WhatsApp message"
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(a, { a = it }, label = { Text(if (kind == "WhatsApp") "Who to message" else "Type here") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                if (kind == "WhatsApp") OutlinedTextField(b, { b = it }, label = { Text("Message") }, modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = a.isNotBlank() && (kind != "WhatsApp" || b.isNotBlank()),
+                onClick = { onGo(a.trim(), b.trim()) }
+            ) { Text("Go") }
+        },
+        dismissButton = { TextButton(onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable
@@ -221,6 +329,7 @@ private fun Bubble(m: ChatMsg, fallbackPersona: String) {
                 .border(1.dp, if (me) accent.copy(alpha = 0.6f) else BorderC, shape)
                 .padding(12.dp)
         ) {
+            if (me && m.voice) Text("🎤 Heard", color = Muted, fontSize = 10.sp)
             m.text.split("```").forEachIndexed { i, part ->
                 if (i % 2 == 0) {
                     if (part.isNotBlank()) Text(part.trim(), color = Color.White, fontSize = 15.sp)
@@ -262,7 +371,8 @@ private fun InputBar(
     val shape = RoundedCornerShape(30.dp)
     Row(
         Modifier.fillMaxWidth().padding(vertical = 10.dp).clip(shape).background(Panel)
-            .border(1.dp, BorderC, shape).padding(start = 6.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+            .border(1.dp, if (Palette.gaming) accent.copy(alpha = 0.5f) else BorderC, shape)
+            .padding(start = 6.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         TextField(
@@ -279,16 +389,16 @@ private fun InputBar(
         if (input.isNotBlank()) {
             IconButton(onClick = onSend) { Icon(Icons.Default.Send, "Send", tint = accent) }
         } else {
+            val ring = if (listening && Palette.gaming) Cyan else accent
             Box(
                 Modifier.size(46.dp).clip(CircleShape)
-                    .background(Brush.radialGradient(listOf(accent, accent.copy(alpha = 0.45f))))
+                    .background(Brush.radialGradient(listOf(ring, if (Palette.gaming) Hot.copy(alpha = 0.55f) else ring.copy(alpha = 0.45f))))
                     .clickable(onClick = onMic),
                 contentAlignment = Alignment.Center
             ) { Text(if (listening) "●" else "🎤", fontSize = 20.sp) }
         }
     }
 }
-
 
 @Composable
 private fun Banner(text: String, action: String, color: Color = Bad, onClick: () -> Unit) {

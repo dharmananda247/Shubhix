@@ -10,8 +10,16 @@ import java.util.Locale
 /** Commands handled on the phone: instant, and no internet needed. */
 object LocalCommands {
 
-    /** askAi is set when a custom command should be sent to Gemini with that instruction. */
-    data class Result(val reply: String, val actions: List<JSONObject>, val askAi: String? = null)
+    /**
+     * askAi: send this instruction to Gemini (custom "Ask AI" shortcut).
+     * agentGoal: start agent mode with this goal (custom "Phone task" shortcut).
+     */
+    data class Result(
+        val reply: String,
+        val actions: List<JSONObject>,
+        val askAi: String? = null,
+        val agentGoal: String? = null
+    )
 
     private fun act(type: String, vararg kv: Pair<String, Any>): JSONObject =
         JSONObject().put("type", type).also { o -> kv.forEach { o.put(it.first, it.second) } }
@@ -28,12 +36,69 @@ object LocalCommands {
     private val openWords = listOf("open", "launch", "kholo", "khol", "खोलो", "खोल", "ओपन", "चालू करो")
     private val fillers = setOf("karo", "kar", "do", "dena", "please", "plz", "app", "the", "ko", "करो", "कर", "दो", "ऐप", "एप")
 
+    private val ytStop = setOf(
+        "open", "launch", "youtube", "on", "in", "at", "and", "then", "search", "for", "play", "it", "the", "please",
+        "pe", "par", "mein", "me", "chalao", "chala", "laga", "do", "karo", "kar", "kholo", "khol", "bajao",
+        "यूट्यूब", "पर", "में", "चलाओ", "चला", "लगा", "दो", "करो", "खोलो", "ओपन", "बजाओ", "और", "सर्च"
+    )
+    private val musicStop = setOf(
+        "ka", "ke", "ki", "gana", "gaana", "gaane", "chalao", "chala", "laga", "do", "bajao", "play", "karo", "kar",
+        "का", "के", "की", "गाना", "गाने", "चलाओ", "चला", "लगा", "दो", "बजाओ", "करो", "please"
+    )
+
+    private val pageKeys = listOf(
+        Pair(listOf("battery usage", "battery settings", "battery saver", "battery"), "battery"),
+        Pair(listOf("wifi", "wi-fi", "वाईफाई"), "wifi"),
+        Pair(listOf("bluetooth", "ब्लूटूथ"), "bluetooth"),
+        Pair(listOf("display", "brightness", "dark mode", "screen timeout"), "display"),
+        Pair(listOf("sound", "ringtone", "volume settings"), "sound"),
+        Pair(listOf("location", "gps"), "location"),
+        Pair(listOf("storage"), "storage"),
+        Pair(listOf("accessibility"), "accessibility"),
+        Pair(listOf("language"), "language"),
+        Pair(listOf("airplane", "flight mode"), "airplane"),
+        Pair(listOf("security"), "security"),
+        Pair(listOf("apps", "app settings"), "apps")
+    )
+
+    private val lead = Regex("^((hi|hey|hello|ok|okay|please|plz|dj|shubhu|shubhix|ai|bro|yaar|sir|हाय|हेलो|प्लीज)[,!.]?\\s+)+")
+    private val tail = Regex("(\\s+(please|plz|ok|now|karo|kar do|kardo|कृपया|प्लीज))+$")
+
     private fun has(t: String, vararg w: String) = w.any { t.contains(it) }
     private fun norm(s: String) = s.lowercase().replace(Regex("[^\\p{L}\\p{M}\\p{N} ]"), " ").replace(Regex("\\s+"), " ").trim()
 
+    /** Drops greetings and politeness words so "hi open whatsapp please" becomes "open whatsapp". */
+    private fun clean(s: String): String {
+        val c = s.replace(lead, "").replace(tail, "").trim()
+        return if (c.isEmpty()) s else c
+    }
+
+    private fun stripWords(text: String, stop: Set<String>) =
+        text.split(" ").filter { it.isNotBlank() && it !in stop }.joinToString(" ").trim()
+
+    private fun title(s: String) = s.split(" ").joinToString(" ") { w ->
+        if (w.isNotEmpty() && w[0].isLowerCase() && w[0].code < 128) w.replaceFirstChar { c -> c.uppercase() } else w
+    }
+
+    /** "call rakhi and tap call" -> "rakhi" */
+    private fun callTarget(t0: String): String? {
+        var t = t0
+        t = t.replace(Regex("\\b(and|then|aur)\\s+(tap|press|click|hit|dial)(\\s+on)?(\\s+the)?(\\s+(call|green|dial)(\\s+button)?)?"), " ")
+        t = t.replace(Regex("\\b(please|plz|now|jaldi)\\b"), " ").replace(Regex("(करो|कर दो|कर दीजिए)"), " ")
+        t = t.replace(Regex("\\s+"), " ").trim()
+        val a = Regex("^(?:call|phone|ring|dial)\\s+(?:to\\s+)?(.+)$").find(t)
+        if (a != null) return a.groupValues[1].trim()
+        val b = Regex("^(.+?)\\s+(?:ko|को)\\s+(?:call|phone|कॉल|फोन)(?:\\s.*)?$").find(t)
+        if (b != null) return b.groupValues[1].trim()
+        val c = Regex("^(.+?)\\s+(?:कॉल|फोन)(?:\\s.*)?$").find(t)
+        if (c != null) return c.groupValues[1].trim()
+        return null
+    }
+
     fun parse(ctx: Context, raw: String, custom: List<CustomCmd>): Result? {
-        val t = raw.lowercase().trim()
-        if (t.isEmpty()) return null
+        val t0 = raw.lowercase().trim()
+        if (t0.isEmpty()) return null
+        val t = clean(t0)
 
         // 0) the user's own shortcuts come first
         val n = norm(raw)
@@ -48,11 +113,23 @@ object LocalCommands {
             val fact = it.groupValues[2].trim()
             if (fact.length >= 4) return Result("Okay, I've forgotten that.", listOf(act("forget", "fact" to fact)))
         }
+        // "momsy is mom" teaches a nickname, but only when the second part is a real contact
+        Regex("^([\\p{L}\\p{M}\\p{N}]+)\\s+(is|means|=|मतलब)\\s+(.+)$").find(t)?.let {
+            val alias = it.groupValues[1]
+            val target = it.groupValues[3].trim()
+            val notNames = setOf("what", "who", "where", "when", "why", "how", "this", "that", "there", "here", "today", "tomorrow", "yesterday", "which", "whose")
+            if (alias.length >= 3 && alias !in notNames && ContactBook.hasPermission(ctx) && ContactBook.search(ctx, alias, emptyMap()).isEmpty()) {
+                val hit = ContactBook.search(ctx, target, emptyMap()).firstOrNull()
+                if (hit != null && alias != ContactBook.norm(hit.name)) {
+                    return Result("Okay, $alias now means ${hit.name}.", listOf(act("nickname", "alias" to alias, "target" to hit.name)))
+                }
+            }
+        }
 
         // 1) answers the phone can give by itself
         if (has(t, "read notification", "read my notification", "notification padho", "notification sunao", "नोटिफिकेशन पढ़ो", "नोटिफिकेशन सुनाओ")) {
             if (!NotificationStore.hasAccess(ctx))
-                return Result("Turn on Notification access for Shubhix in Settings > Permissions first.", emptyList())
+                return Result("Turn on Notification access for Shubhix AI in Settings > Permissions first.", emptyList())
             val items = NotificationStore.latest(5)
             return if (items.isEmpty()) Result("You have no new notifications.", emptyList())
             else Result(
@@ -79,7 +156,7 @@ object LocalCommands {
             return Result("It's ${SimpleDateFormat("h:mm a", Locale.ENGLISH).format(Date())}.", emptyList())
         if (has(t, "what date", "today's date", "aaj ki date", "aaj kya tarikh", "आज की तारीख", "तारीख क्या", "आज कौन सा दिन"))
             return Result("Today is ${SimpleDateFormat("EEEE, d MMMM yyyy", Locale.ENGLISH).format(Date())}.", emptyList())
-        if (has(t, "battery", "बैटरी")) {
+        if (has(t, "battery level", "battery percent", "how much battery", "बैटरी कितनी", "बैटरी लेवल") || t == "battery") {
             val b = ctx.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
             return Result("Battery is at ${b.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)}%.", emptyList())
         }
@@ -114,7 +191,8 @@ object LocalCommands {
         if (has(t, "screenshot", "स्क्रीनशॉट")) return Result("Taking a screenshot.", listOf(act("system", "name" to "screenshot")))
         if (has(t, "lock screen", "lock phone", "lock the phone", "फोन लॉक", "स्क्रीन लॉक"))
             return Result("Locking.", listOf(act("system", "name" to "lock")))
-        if (has(t, "notifications", "notification panel", "नोटिफिकेशन") && openWords.any { t.contains(it) })
+        val opening = openWords.any { t.contains(it) }
+        if (has(t, "notifications", "notification panel", "नोटिफिकेशन") && opening)
             return Result("Opening notifications.", listOf(act("system", "name" to "notifications")))
         if (has(t, "recents", "recent apps", "रिसेंट")) return Result("Recent apps.", listOf(act("recents")))
         if (has(t, "go back", "back jao", "back karo", "पीछे", "वापस जाओ", "बैक") || t == "back")
@@ -122,7 +200,7 @@ object LocalCommands {
         if (has(t, "go home", "home jao", "home screen", "होम") || t == "home")
             return Result("Going home.", listOf(act("home")))
 
-        // 4) timer and call
+        // 4) timer
         if (has(t, "timer", "टाइमर")) {
             val m = Regex("(\\d+)\\s*(hour|hr|घंटे|घंटा|minute|min|मिनट|second|sec|सेकंड)").find(t)
             if (m != null) {
@@ -136,17 +214,90 @@ object LocalCommands {
                 return Result("Timer set.", listOf(act("timer", "seconds" to secs)))
             }
         }
-        if (has(t, "call", "कॉल", "फोन करो")) {
-            val target = (Regex("call\\s+(.+?)(\\s+karo|\\s+kar do|$)").find(t)?.groupValues?.get(1)
-                ?: Regex("(.+?)\\s+ko\\s+call").find(t)?.groupValues?.get(1))?.trim()
-            if (!target.isNullOrBlank() && Actions.canCall(ctx, target))
-                return Result("Calling $target.", listOf(act("call", "target" to target)))
+
+        // 5) people: calls, WhatsApp, SMS
+        if (has(t, "call again", "redial", "phir se call", "फिर से कॉल"))
+            return Result("Calling again.", listOf(act("call", "target" to "__last__")))
+        if (has(t, "call", "कॉल", "फोन", "phone", "ring ", "dial")) {
+            val target = callTarget(t)
+            if (!target.isNullOrBlank()) return Result("Calling ${title(target)}.", listOf(act("call", "target" to target)))
+        }
+        val mentionsWa = has(t, "whatsapp", "व्हाट्सएप", "व्हाट्सऐप")
+        val send = Regex(
+            "^(?:send\\s+(?:a\\s+)?(?:whatsapp\\s+)?(?:message|msg|text)\\s+to|message|msg|whatsapp|text|sms)\\s+(.+?)" +
+                "(?:\\s+(?:on|in|via)\\s+whatsapp)?\\s+(?:saying|that says|that|:)\\s+(.+)$"
+        ).find(t)
+        if (send != null) {
+            val name = send.groupValues[1].trim()
+            val text = send.groupValues[2].trim()
+            if (name.isNotEmpty() && text.isNotEmpty()) {
+                val sms = t.startsWith("sms ") || (t.startsWith("text ") && !mentionsWa)
+                return if (sms) Result("Texting ${title(name)}.", listOf(act("sms", "target" to name, "text" to text)))
+                else Result("Messaging ${title(name)}.", listOf(act("whatsapp", "target" to name, "text" to text, "send" to true)))
+            }
+        }
+        val chat = Regex("^(?:message|msg|chat with|open chat with)\\s+(.+?)\\s+(?:on|in|via)\\s+whatsapp$").find(t)
+        if (chat != null) {
+            val name = chat.groupValues[1].trim()
+            return Result("Opening chat with ${title(name)}.", listOf(act("whatsapp", "target" to name, "text" to "", "send" to false)))
         }
 
-        // 5) open settings pages or apps (apps only when really installed, otherwise Gemini decides)
-        val opening = openWords.any { t.contains(it) }
-        if (opening && has(t, "wifi", "wi-fi", "वाईफाई")) return Result("Opening Wi-Fi settings.", listOf(act("system", "name" to "wifi")))
-        if (opening && has(t, "bluetooth", "ब्लूटूथ")) return Result("Opening Bluetooth settings.", listOf(act("system", "name" to "bluetooth")))
+        // 6) places
+        val nav = Regex("^(?:navigate|directions?|route|take me|drive)\\s+(?:to\\s+)?(.+)$").find(t)
+            ?: Regex("^go\\s+to\\s+(.+)$").find(t)
+        if (nav != null && nav.groupValues[1].isNotBlank() &&
+            nav.groupValues[1].trim() !in setOf("home", "back", "sleep", "bed", "settings", "the home screen")
+        ) return Result("Starting navigation.", listOf(act("maps", "query" to nav.groupValues[1].trim(), "navigate" to true)))
+        val navHindi = Regex("^(.+?)\\s+(?:ka rasta|ka route|ka direction|का रास्ता)$").find(t)
+        if (navHindi != null)
+            return Result("Starting navigation.", listOf(act("maps", "query" to navHindi.groupValues[1].trim(), "navigate" to true)))
+        val onMap = Regex("^(?:show|find|search)\\s+(.+?)\\s+(?:on\\s+)?(?:the\\s+)?maps?$").find(t)
+        if (onMap != null)
+            return Result("Showing it on the map.", listOf(act("maps", "query" to onMap.groupValues[1].trim(), "navigate" to false)))
+
+        // 7) gallery and camera
+        if (has(t, "gallery", "गैलरी", "my photos", "photos app", "open photos") && (opening || has(t, "show", "dikhao", "दिखाओ") || t == "gallery"))
+            return Result("Opening the gallery.", listOf(act("gallery")))
+        if (has(t, "camera", "कैमरा", "selfie", "take a photo", "take a picture", "take photo", "record a video", "video record") &&
+            (opening || has(t, "take", "record", "selfie", "खींच")) ) {
+            val mode = when {
+                has(t, "selfie") -> "selfie"
+                has(t, "video") -> "video"
+                else -> "photo"
+            }
+            return Result("Opening the camera.", listOf(act("camera", "mode" to mode)))
+        }
+
+        // 8) YouTube and music
+        if (has(t, "youtube", "यूट्यूब")) {
+            val q = stripWords(t, ytStop)
+            val playWords = has(t, "play", "chalao", "chala", "laga", "bajao", "चलाओ", "चला", "लगा", "बजाओ")
+            if (q.isNotEmpty()) {
+                return if (playWords) Result("Playing on YouTube.", listOf(act("youtube_play", "query" to q)))
+                else Result("Searching YouTube.", listOf(act("play_youtube", "query" to q)))
+            }
+        }
+        val play = Regex("^(?:play|bajao|chalao|laga do)\\s+(.+)$").find(t)
+        if (play != null) {
+            val q = stripWords(play.groupValues[1], setOf("please", "now"))
+            if (q.isNotEmpty()) return Result("Playing $q.", listOf(act("music", "query" to q)))
+        }
+        if (has(t, "gana", "gaana", "gaane", "गाना", "गाने") && has(t, "chalao", "laga", "bajao", "चलाओ", "लगा", "बजाओ")) {
+            val q = stripWords(t, musicStop)
+            if (q.isNotEmpty()) return Result("Playing $q.", listOf(act("music", "query" to q)))
+        }
+
+        // 9) settings pages
+        val saysSettings = has(t, "settings", "सेटिंग")
+        if (saysSettings || opening) {
+            val safeWithoutWord = setOf("wifi", "bluetooth", "airplane", "battery", "display")
+            for (p in pageKeys) {
+                if (p.first.any { t.contains(it) } && (saysSettings || p.second in safeWithoutWord))
+                    return Result("Opening ${p.second} settings.", listOf(act("settings_page", "name" to p.second)))
+            }
+        }
+
+        // 10) open an app (only when it is really installed, otherwise Gemini decides)
         if (opening) {
             var name = t
             openWords.forEach { name = name.replace(it, " ") }
@@ -163,6 +314,7 @@ object LocalCommands {
         "open_url" -> Result("Opening the link.", listOf(act("open_url", "url" to (if (c.value.startsWith("http")) c.value else "https://" + c.value))))
         "call" -> Result("Calling ${c.value}.", listOf(act("call", "target" to c.value)))
         "youtube" -> Result("Searching YouTube.", listOf(act("play_youtube", "query" to c.value)))
+        "task" -> Result("On it.", emptyList(), agentGoal = c.value)
         else -> Result("", emptyList(), askAi = c.value)
     }
 }

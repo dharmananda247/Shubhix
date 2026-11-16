@@ -12,7 +12,7 @@ class TalkTileService : TileService() {
         try {
             qsTile?.apply {
                 state = Tile.STATE_INACTIVE
-                label = "Talk to Shubhix"
+                label = "Talk to Shubhix AI"
                 updateTile()
             }
         } catch (e: Exception) { /* ignore */ }

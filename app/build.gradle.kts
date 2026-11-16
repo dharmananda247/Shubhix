@@ -13,8 +13,10 @@ android {
         applicationId = "com.shubhix.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 7
-        versionName = "2.0"
+        versionCode = 8
+        versionName = "2.1"
+        // The GitHub build passes its run number so the app can tell whether a newer release exists.
+        buildConfigField("int", "BUILD_NUMBER", System.getenv("BUILD_NUMBER") ?: "0")
     }
     signingConfigs {
         create("release") {
@@ -42,7 +44,10 @@ android {
         abortOnError = false
         checkReleaseBuilds = false
     }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
 }
 
@@ -56,4 +61,5 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }

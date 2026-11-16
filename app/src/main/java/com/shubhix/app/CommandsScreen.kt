@@ -37,10 +37,11 @@ private data class Cmd(val text: String, val online: Boolean = false, val prompt
 private data class Group(val title: String, val cmds: List<Cmd>)
 
 private val groups = listOf(
-    Group("Apps", listOf(Cmd("Open WhatsApp"), Cmd("Open camera"), Cmd("Open Chrome"), Cmd("Open Wi-Fi settings"))),
-    Group("Media", listOf(Cmd("Play Arijit Singh songs", true), Cmd("Pause"), Cmd("Next song"), Cmd("Volume up"))),
+    Group("People", listOf(Cmd("Call Mom"), Cmd("Message Mom on WhatsApp saying hi"), Cmd("SMS Mom saying hello"), Cmd("Call again"))),
+    Group("Apps", listOf(Cmd("Open WhatsApp"), Cmd("Open camera"), Cmd("Open gallery"), Cmd("Open Chrome"), Cmd("Open Wi-Fi settings"), Cmd("Open battery usage"), Cmd("Navigate to railway station"))),
+    Group("Media", listOf(Cmd("Play Arijit Singh songs"), Cmd("Play bollywood songs on YouTube"), Cmd("Pause"), Cmd("Next song"), Cmd("Volume up"))),
     Group("Screen", listOf(Cmd("Scroll down"), Cmd("Go back"), Cmd("Go home"), Cmd("Recent apps"), Cmd("Take a screenshot"))),
-    Group("Tools", listOf(Cmd("Torch on"), Cmd("What time is it"), Cmd("Battery level"), Cmd("Daily briefing"), Cmd("Read my notifications"), Cmd("Set a 10 minute timer"), Cmd("Call Mom"), Cmd("Write a Python calculator", true))),
+    Group("Tools", listOf(Cmd("Torch on"), Cmd("What time is it"), Cmd("Battery level"), Cmd("Daily briefing"), Cmd("Read my notifications"), Cmd("Set a 10 minute timer"), Cmd("Write a Python calculator", true))),
     Group("Phone tasks (AI)", listOf(
         Cmd("Open YouTube, search bollywood songs and play it", true),
         Cmd("Open WhatsApp and message Mom hi", true),
@@ -57,7 +58,7 @@ private val groups = listOf(
 )
 
 private val customTypes = listOf(
-    "open_app" to "Open app", "open_url" to "Website", "call" to "Call", "youtube" to "YouTube", "ask_ai" to "Ask AI"
+    "open_app" to "Open app", "open_url" to "Website", "call" to "Call", "youtube" to "YouTube", "ask_ai" to "Ask AI", "task" to "Phone task"
 )
 
 @Composable
@@ -139,6 +140,7 @@ private fun AddCustomDialog(onDismiss: () -> Unit, onSave: (CustomCmd) -> Unit) 
         "open_url" -> "Link, e.g. nexgenbyte.blogspot.com"
         "call" -> "Contact name or number"
         "youtube" -> "What to search on YouTube"
+        "task" -> "Describe the task, e.g. Open YouTube and play my liked songs"
         else -> "What should the AI do? e.g. Quiz me with 5 Tally questions"
     }
     AlertDialog(

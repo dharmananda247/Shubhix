@@ -6,9 +6,9 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.provider.Settings
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -66,25 +66,28 @@ fun SettingsScreen(vm: MainVM) {
     var editing by remember { mutableStateOf<String?>(null) }
     var voicePick by remember { mutableStateOf<String?>(null) }
     var pickModel by remember { mutableStateOf(false) }
+    var showDiag by remember { mutableStateOf(false) }
     var tick by remember { mutableIntStateOf(0) }
     LifecycleResumeEffect(Unit) { tick++; onPauseOrDispose { } }
 
     val micOk = remember(tick) { ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED }
     val contactsOk = remember(tick) { ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED }
+    val callOk = remember(tick) { ContextCompat.checkSelfPermission(ctx, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED }
     val accRunning = remember(tick) { ShubhixAccessibilityService.instance != null }
     val accEnabled = remember(tick) { ShubhixAccessibilityService.isEnabled(ctx) }
     val overlayOk = remember(tick) { BubbleService.canDraw(ctx) }
     val notifOk = remember(tick) { NotificationStore.hasAccess(ctx) }
-    var newFact by remember { mutableStateOf("") }
 
-    val appSettings = { ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + ctx.packageName))) }
-    val accSettings = { ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+    val appSettings = { openAppInfo(ctx) }
+    val accSettings = { ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Text("Settings", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+
+        ThemeCard(vm, s)
 
         SectionCard("AI Brain") {
             OutlinedTextField(
@@ -95,9 +98,7 @@ fun SettingsScreen(vm: MainVM) {
             )
             OutlinedTextField(model, { model = it }, label = { Text("Model") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             Row(verticalAlignment = Alignment.CenterVertically) {
-                StatusDot(
-                    vm.testOk == true, color = if (vm.testOk == null) Muted else null
-                )
+                StatusDot(vm.testOk == true, color = if (vm.testOk == null) Muted else null)
                 Spacer(Modifier.width(8.dp))
                 Text(
                     when {
@@ -113,6 +114,8 @@ fun SettingsScreen(vm: MainVM) {
                 Button({ vm.saveAndTest(s.copy(apiKey = api.trim(), model = model.trim())) }, Modifier.weight(1f)) { Text("Save & test") }
                 OutlinedButton({ pickModel = true }, Modifier.weight(1f)) { Text("Choose model") }
             }
+            OutlinedButton({ vm.runDiagnostics(api.trim(), model.trim()); showDiag = true }, Modifier.fillMaxWidth()) { Text("Connection check") }
+            Text("If your chosen model stops working, Shubhix AI quietly switches to one that does.", color = Muted, fontSize = 12.sp)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Let the AI see my app names")
@@ -130,6 +133,13 @@ fun SettingsScreen(vm: MainVM) {
                 }
                 Switch(s.agentOn, { vm.saveSettings(s.copy(agentOn = it)) })
             }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Look at a screenshot when needed")
+                    Text("Only if an app's screen cannot be read, and only during a task. Needs Android 11 or newer.", color = Muted, fontSize = 12.sp)
+                }
+                Switch(s.visionOn, { vm.saveSettings(s.copy(visionOn = it)) })
+            }
         }
 
         SectionCard("Voice and personas") {
@@ -141,9 +151,9 @@ fun SettingsScreen(vm: MainVM) {
                 Switch(s.voiceReply, { vm.setVoiceReply(it) })
             }
             Text("Listening language", color = Muted, fontSize = 13.sp)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("hi-IN" to "Hindi + English", "en-IN" to "English").forEach { (code, label) ->
-                    FilterChip(selected = s.listenLang == code, onClick = { vm.saveSettings(s.copy(listenLang = code)) }, label = { Text(label) })
+            Row(Modifier.horizontalScrollCompat(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("hi-IN" to "Hindi + English", "en-IN" to "English", "or-IN" to "Odia", "bn-IN" to "Bengali").forEach { l ->
+                    FilterChip(selected = s.listenLang == l.first, onClick = { vm.saveSettings(s.copy(listenLang = l.first)) }, label = { Text(l.second) })
                 }
             }
             Text("Voice speed: ${"%.1f".format(speed)}x", color = Muted, fontSize = 13.sp)
@@ -180,12 +190,15 @@ fun SettingsScreen(vm: MainVM) {
             }
         }
 
+        CallsCard(vm, s)
+        MusicCard(vm, s)
+
         SectionCard("Floating bubble") {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Show the bubble over other apps")
                     Text(
-                        "Tap to talk from any app. Drag to move, long-press to open Shubhix, tap while a task runs to stop it.",
+                        "Tap to talk from any app. Drag to move, long-press to open Shubhix AI, tap while a task runs to stop it.",
                         color = Muted, fontSize = 12.sp
                     )
                 }
@@ -197,12 +210,13 @@ fun SettingsScreen(vm: MainVM) {
                     else BubbleService.start(ctx)
                 })
             }
-            Text("Tip: add the Talk to Shubhix tile to your phone's quick settings panel for one-tap talking.", color = Muted, fontSize = 12.sp)
+            Text("Tip: add the Talk to Shubhix AI tile or the home-screen widget for one-tap talking.", color = Muted, fontSize = 12.sp)
         }
 
         SectionCard("Permissions") {
             PermRow("Microphone", micOk, null, appSettings)
             PermRow("Contacts (for calls)", contactsOk, null, appSettings)
+            PermRow("Phone calls (dial automatically)", callOk, null, appSettings)
             PermRow("Display over other apps", overlayOk, null) { openOverlaySettings(ctx) }
             PermRow("Notification access (read aloud)", notifOk, null) {
                 ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -212,25 +226,25 @@ fun SettingsScreen(vm: MainVM) {
                 when {
                     accRunning -> null
                     accEnabled -> "Turned on but not running. Switch it off and on again."
-                    else -> "Off. Tap Enable, open Installed apps, choose Shubhix and turn it on."
+                    else -> "Off. Tap Enable, open Installed apps, choose Shubhix AI and turn it on."
                 },
                 accSettings
             )
             OutlinedButton({ vm.testScreenControl() }, Modifier.fillMaxWidth()) { Text("Test screen control") }
-            OutlinedButton({ openBattery(ctx) }, Modifier.fillMaxWidth()) { Text("Keep Shubhix alive (battery)") }
             if (vm.accTest.isNotEmpty()) Text(vm.accTest, color = Muted, fontSize = 13.sp)
             Text(
-                "Screen control acts on the app that is open on screen. Android never turns it on automatically. " +
-                    "If it keeps switching off, set Shubhix to Unrestricted in the phone's battery settings.",
+                "Screen control acts on the app that is open on screen. Android never turns it on automatically.",
                 color = Muted, fontSize = 12.sp
             )
         }
 
+        KeepAliveCard()
+
         SectionCard("Chat history") {
             Text("Delete chats older than", color = Muted, fontSize = 13.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(0 to "Never", 7 to "7 days", 30 to "30 days").forEach { (d, label) ->
-                    FilterChip(selected = s.retentionDays == d, onClick = { vm.saveSettings(s.copy(retentionDays = d)) }, label = { Text(label) })
+                listOf(0 to "Never", 7 to "7 days", 30 to "30 days").forEach { d ->
+                    FilterChip(selected = s.retentionDays == d.first, onClick = { vm.saveSettings(s.copy(retentionDays = d.first)) }, label = { Text(d.second) })
                 }
             }
             OutlinedButton({
@@ -241,24 +255,14 @@ fun SettingsScreen(vm: MainVM) {
             Text("Chats are stored only on this phone.", color = Muted, fontSize = 12.sp)
         }
 
-        SectionCard("Memory") {
-            Text("What DJ and SHUBHU remember about you. Say \"remember that…\" to add something. It is stored only on this phone and sent to Gemini with your messages.", color = Muted, fontSize = 12.sp)
-            if (vm.facts.isEmpty()) Text("Nothing yet.", color = Muted, fontSize = 13.sp)
-            vm.facts.toList().forEach { f ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(f, Modifier.weight(1f), fontSize = 13.sp)
-                    TextButton({ vm.removeFact(f) }) { Text("Delete", color = Bad, fontSize = 12.sp) }
-                }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(newFact, { newFact = it }, label = { Text("Add something") }, singleLine = true, modifier = Modifier.weight(1f))
-                TextButton({ if (newFact.isNotBlank()) { vm.addFact(newFact); newFact = "" } }) { Text("Add") }
-            }
-            if (vm.facts.isNotEmpty()) OutlinedButton({ vm.clearFacts() }, Modifier.fillMaxWidth()) { Text("Forget everything") }
-        }
+        MemoryCard(vm)
+        BlockedCard(vm)
+        TasksCard(vm)
+        BackupCard(vm)
+        ToolsCard(vm)
 
         SectionCard("About") {
-            Text("Shubhix v2.0", color = Muted)
+            Text("Shubhix AI v2.1", color = Muted)
             if (vm.crash.isNotEmpty()) {
                 Text("The app closed unexpectedly last time. Copy this and send it to be fixed:", color = Bad, fontSize = 12.sp)
                 Text(vm.crash.take(700), color = Muted, fontSize = 11.sp)
@@ -275,6 +279,29 @@ fun SettingsScreen(vm: MainVM) {
     }
 
     // ---- dialogs ----
+    if (showDiag) {
+        AlertDialog(
+            onDismissRequest = { showDiag = false },
+            title = { Text("Connection check") },
+            text = {
+                Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (vm.diagRunning) Text("Checking…", color = Muted)
+                    vm.diag.forEach { c ->
+                        Row(verticalAlignment = Alignment.Top) {
+                            StatusDot(c.ok)
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Text(c.name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                Text(c.detail, color = Muted, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton({ showDiag = false }) { Text("Close") } }
+        )
+    }
+
     if (pickModel) {
         LaunchedEffect(Unit) { vm.loadModels(api.trim()) }
         AlertDialog(
@@ -314,7 +341,7 @@ fun SettingsScreen(vm: MainVM) {
                     if (list.isEmpty()) {
                         Text("No other voices found. Add voices in Android Settings > Text-to-speech.", color = Muted, fontSize = 12.sp)
                     }
-                    list.forEach { (name, label) -> VoiceRow(label, name == cur, { pick(name) }, { vm.preview(p, name, pitch) }) }
+                    list.forEach { v -> VoiceRow(v.second, v.first == cur, { pick(v.first) }, { vm.preview(p, v.first, pitch) }) }
                 }
             },
             confirmButton = { TextButton({ voicePick = null }) { Text("Done") } }
@@ -339,6 +366,10 @@ fun SettingsScreen(vm: MainVM) {
 }
 
 @Composable
+private fun Modifier.horizontalScrollCompat(): Modifier =
+    this.then(Modifier.horizontalScroll(rememberScrollState()))
+
+@Composable
 private fun VoiceRow(label: String, selected: Boolean, onPick: () -> Unit, onPreview: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onPick).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f), color = if (selected) MaterialTheme.colorScheme.primary else Color.White, fontSize = 13.sp)
@@ -357,29 +388,4 @@ private fun PermRow(name: String, ok: Boolean, hint: String?, onFix: () -> Unit)
         }
         if (hint != null) Text(hint, color = Muted, fontSize = 12.sp, modifier = Modifier.padding(start = 18.dp))
     }
-}
-
-
-/** Opens the battery optimisation list so Shubhix can be set to "Don't optimise" / Unrestricted. */
-private fun openBattery(ctx: Context) {
-    try {
-        ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-    } catch (e: Exception) {
-        try {
-            ctx.startActivity(
-                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + ctx.packageName))
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
-        } catch (e2: Exception) { /* nothing else to try */ }
-    }
-}
-
-
-private fun openOverlaySettings(ctx: Context) {
-    try {
-        ctx.startActivity(
-            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + ctx.packageName))
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
-    } catch (e: Exception) { /* ignore */ }
 }

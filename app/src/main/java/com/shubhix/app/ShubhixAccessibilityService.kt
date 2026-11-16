@@ -1,10 +1,13 @@
 package com.shubhix.app
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityService.ScreenshotResult
+import android.accessibilityservice.AccessibilityService.TakeScreenshotCallback
 import android.accessibilityservice.GestureDescription
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.Path
 import android.graphics.Rect
 import android.os.Build
@@ -12,8 +15,13 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.util.Base64
+import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import kotlinx.coroutines.suspendCancellableCoroutine
+import java.io.ByteArrayOutputStream
+import kotlin.coroutines.resume
 
 /** One thing visible on screen that the agent can act on. */
 data class UiNode(val id: Int, val kind: String, val label: String, val flags: String, val cx: Int, val cy: Int)
@@ -108,6 +116,45 @@ class ShubhixAccessibilityService : AccessibilityService() {
             Screen(root.packageName?.toString() ?: "", nodes, refs)
         } catch (e: Exception) {
             null
+        }
+    }
+
+    /** A small JPEG of the screen as Base64, for apps whose screens cannot be read. Needs Android 11 or newer. */
+    suspend fun screenshotBase64(): String? = suspendCancellableCoroutine<String?> { cont ->
+        if (Build.VERSION.SDK_INT < 30) {
+            cont.resume(null)
+        } else {
+            try {
+                takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
+                    override fun onSuccess(screenshot: ScreenshotResult) {
+                        var result: String? = null
+                        try {
+                            val buffer = screenshot.hardwareBuffer
+                            val wrapped = Bitmap.wrapHardwareBuffer(buffer, screenshot.colorSpace)
+                            val soft = wrapped?.copy(Bitmap.Config.ARGB_8888, false)
+                            buffer.close()
+                            if (soft != null) {
+                                val scale = 800f / maxOf(soft.width, soft.height)
+                                val small = if (scale < 1f) {
+                                    Bitmap.createScaledBitmap(soft, (soft.width * scale).toInt(), (soft.height * scale).toInt(), true)
+                                } else soft
+                                val bos = ByteArrayOutputStream()
+                                small.compress(Bitmap.CompressFormat.JPEG, 60, bos)
+                                result = Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP)
+                            }
+                        } catch (e: Exception) {
+                            result = null
+                        }
+                        cont.resume(result)
+                    }
+
+                    override fun onFailure(errorCode: Int) {
+                        cont.resume(null)
+                    }
+                })
+            } catch (e: Exception) {
+                cont.resume(null)
+            }
         }
     }
 
